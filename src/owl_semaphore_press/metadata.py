@@ -21,7 +21,9 @@ def set_pdf_metadata(pdf_path: str, doc: dict, cfg: PressConfig) -> bool:
     keywords = ", ".join([*cfg.doc_keywords(doc["state_token"]), cfg.release_label])
     subject = doc["pdf_subject"]
     title = f'{doc["title"]} ({cfg.release_label})'
-    creator = f"{cfg.generated_by} ({cfg.release_label})"
+    # Same "<tool> <version-label>" shape the legacy generator stamped
+    # (e.g. "owl-semaphore/generate_pdfs.py v3.0.0").
+    creator = f"{cfg.generated_by} {cfg.release_label}"
 
     try:
         with pikepdf.open(pdf_path, allow_overwriting_input=True) as pdf:

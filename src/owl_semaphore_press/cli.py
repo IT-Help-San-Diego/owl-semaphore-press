@@ -9,11 +9,17 @@ Subcommands (Zenodo release automation, per RELEASE-PROCESS.md):
   owl-press zenodo metadata DEPOSITION_ID --from .zenodo.json
       Push metadata from a .zenodo.json file onto the draft.
 
-  owl-press zenodo upload DEPOSITION_ID FILE [FILE ...]
-      Upload release files into the draft's bucket.
+  owl-press zenodo upload DEPOSITION_ID FILE [FILE ...] [--fresh]
+      Upload release files into the draft's bucket. --fresh first deletes
+      every file already on the draft (new-version drafts INHERIT the
+      previous version's files; without --fresh or explicit deletes, stale
+      version-tagged files are published into the permanent record).
 
   owl-press zenodo files DEPOSITION_ID
       List files currently on the deposition.
+
+  owl-press zenodo delete DEPOSITION_ID FILENAME [FILENAME ...]
+      Delete draft files by filename (use 'files' to list them).
 
   owl-press zenodo status DEPOSITION_ID
       Show state, DOI, and links for a deposition.
@@ -21,8 +27,10 @@ Subcommands (Zenodo release automation, per RELEASE-PROCESS.md):
   owl-press zenodo publish DEPOSITION_ID --yes
       Publish the draft. IRREVERSIBLE; refuses to run without --yes.
 
-Global flags: --sandbox (use sandbox.zenodo.org + ZENODO_SANDBOX_TOKEN),
---token TOKEN (overrides the environment).
+Global flags are defined on the ROOT command and must come BEFORE the
+subcommand:  owl-press --sandbox zenodo publish 999 --yes
+  --sandbox   use sandbox.zenodo.org + ZENODO_SANDBOX_TOKEN
+  --token T   override the environment token
 """
 
 from __future__ import annotations
@@ -79,9 +87,39 @@ def _cmd_upload(args: argparse.Namespace) -> int:
         if not os.path.isfile(path):
             print(f"error: not a file: {path}", file=sys.stderr)
             return 2
+    if args.fresh:
+        for name in client.clear_files(args.deposition_id):
+            print(f"deleted inherited file {name}")
+    else:
+        inherited = client.list_files(args.deposition_id)
+        uploads = {os.path.basename(p) for p in args.files}
+        stale = [f.get("filename", f.get("key", "?")) for f in inherited
+                 if f.get("filename", f.get("key")) not in uploads]
+        if stale:
+            print("warning: draft already contains files not in this upload "
+                  f"(inherited from the previous version?): {', '.join(stale)}",
+                  file=sys.stderr)
+            print("warning: they WILL be published unless deleted "
+                  "(re-run with --fresh, or use 'owl-press zenodo delete').",
+                  file=sys.stderr)
     for path in args.files:
         client.upload_file(dep, path)
         print(f"uploaded {path}")
+    return 0
+
+
+def _cmd_delete(args: argparse.Namespace) -> int:
+    client = _client(args)
+    by_name = {}
+    for f in client.list_files(args.deposition_id):
+        by_name[f.get("filename", f.get("key"))] = f["id"]
+    missing = [n for n in args.filenames if n not in by_name]
+    if missing:
+        print(f"error: not on the draft: {', '.join(missing)}", file=sys.stderr)
+        return 2
+    for name in args.filenames:
+        client.delete_file(args.deposition_id, by_name[name])
+        print(f"deleted {name}")
     return 0
 
 
@@ -142,11 +180,19 @@ def build_parser() -> argparse.ArgumentParser:
     p = zsub.add_parser("upload", help="upload files into the draft bucket")
     p.add_argument("deposition_id")
     p.add_argument("files", nargs="+")
+    p.add_argument("--fresh", action="store_true",
+                   help="delete ALL files already on the draft before uploading "
+                        "(new-version drafts inherit the previous version's files)")
     p.set_defaults(func=_cmd_upload)
 
     p = zsub.add_parser("files", help="list deposition files")
     p.add_argument("deposition_id")
     p.set_defaults(func=_cmd_files)
+
+    p = zsub.add_parser("delete", help="delete draft files by filename")
+    p.add_argument("deposition_id")
+    p.add_argument("filenames", nargs="+")
+    p.set_defaults(func=_cmd_delete)
 
     p = zsub.add_parser("status", help="show deposition state and DOI")
     p.add_argument("deposition_id")

@@ -1,0 +1,118 @@
+"""The six canonical owl-semaphore document specs.
+
+Shipped with the package so the owl-semaphore migration cannot silently drop
+per-document rules that the legacy generator hard-coded — in particular the
+SYSTEM document's 90% contact-sheet width, which is a spec key here
+(``contact_width``) rather than a filename special-case.
+
+The parity test verifies these stay in sync with the legacy generator's DOCS
+list for as long as both exist.
+"""
+
+from __future__ import annotations
+
+OWL_SEMAPHORE_DOCS: list[dict] = [
+    {
+        "md": "OWL-SEMAPHORE-SYSTEM.md",
+        "pdf": "OWL-SEMAPHORE-SYSTEM.pdf",
+        "badge": "assets/releases/540/NORM-composite-transparent-540.png",
+        "contact_sheet": "assets/proofs/OWL-SEMAPHORE-MASTER-PROOF.png",
+        "color": "#d4a853",
+        "color_rgb": "rgb(212, 168, 83)",
+        "label": "N O R M A T I V E",
+        "state_token": "SYSTEM",
+        "title": "Owl Semaphore",
+        "subtitle_typst": "System Specification — A Finite Algebra of Epistemic States",
+        "mathline": "T = I    det = +1    (x, y) -> (x, y)",
+        "quote": '"This is the standard."',
+        "standard_ref": "RFC 2119 MUST / SHALL",
+        "contact_caption": "Owl Semaphore System — Master Proof",
+        "pdf_subject": "Owl Semaphore System Specification (v3.0.0)",
+        "contact_width": "90%",  # legacy generator hard-coded 90% for SYSTEM
+    },
+    {
+        "md": "OWL-SEMAPHORE-EXPLANATION.md",
+        "pdf": "OWL-SEMAPHORE-EXPLANATION.pdf",
+        "badge": "assets/releases/540/META-composite-transparent-540.png",
+        "contact_sheet": "assets/proofs/OWL-SEMAPHORE-MASTER-PROOF.png",
+        "color": "#8C4191",
+        "color_rgb": "rgb(140, 65, 145)",
+        "label": "E X P L A N A T I O N",
+        "state_token": "EXPLAIN",
+        "title": "Owl Semaphore — Explanation",
+        "subtitle_typst": "Informative Companion — Origin Story, Archetype Rationale, Accessibility",
+        "mathline": "V4 = { I, sigma_v, C2, sigma_h }",
+        "quote": '"Thinking examines its own frame."',
+        "standard_ref": "Informative / Explanatory",
+        "contact_caption": "Owl Semaphore System — Master Proof",
+        "pdf_subject": "Owl Semaphore Explanation (informative companion, v3.0.0)",
+    },
+    {
+        "md": "OWL-1-NORMATIVE.md",
+        "pdf": "OWL-1-NORMATIVE.pdf",
+        "badge": "assets/releases/540/NORM-composite-transparent-540.png",
+        "contact_sheet": "assets/proofs/NORM-layer-proof-palette.png",
+        "color": "#d4a853",
+        "color_rgb": "rgb(212, 168, 83)",
+        "label": "N O R M A T I V E",
+        "state_token": "NORMATIVE",
+        "title": "Owl Semaphore — Normative",
+        "subtitle_typst": "OWL 1 / Identity State / Standard Specification",
+        "mathline": "T = I    det = +1    (x, y) -> (x, y)",
+        "quote": '"This is the standard."',
+        "standard_ref": "RFC 2119 MUST / SHALL",
+        "contact_caption": "Normative — Layer Proof Palette",
+        "pdf_subject": "Owl Semaphore — Normative state specification (OWL 1 / I, v3.0.0)",
+    },
+    {
+        "md": "OWL-2-NON-NORMATIVE.md",
+        "pdf": "OWL-2-NON-NORMATIVE.pdf",
+        "badge": "assets/releases/540/NONNORM-composite-transparent-540.png",
+        "contact_sheet": "assets/proofs/NONNORM-layer-proof-palette.png",
+        "color": "#316964",
+        "color_rgb": "rgb(49, 105, 100)",
+        "label": "N O N - N O R M A T I V E",
+        "state_token": "NON-NORMATIVE",
+        "title": "Owl Semaphore — Non-Normative",
+        "subtitle_typst": "OWL 2 / Reflection State (sigma_v) / Standard Specification",
+        "mathline": "T = sigma_v    det = -1    (x, y) -> (-x, y)",
+        "quote": '"This reflects the standard."',
+        "standard_ref": "Informative / Advisory (NOTE)",
+        "contact_caption": "Non-Normative — Layer Proof Palette",
+        "pdf_subject": "Owl Semaphore — Non-Normative state specification (OWL 2 / sigma_v, v3.0.0)",
+    },
+    {
+        "md": "OWL-3-CRITICAL.md",
+        "pdf": "OWL-3-CRITICAL.pdf",
+        "badge": "assets/releases/540/CRIT-composite-transparent-540.png",
+        "contact_sheet": "assets/proofs/CRIT-layer-proof-palette.png",
+        "color": "#990f1e",
+        "color_rgb": "rgb(153, 15, 30)",
+        "label": "C R I T I C A L",
+        "state_token": "CRITICAL",
+        "title": "Owl Semaphore — Critical",
+        "subtitle_typst": "OWL 3 / Inversion State (C2) / Standard Specification",
+        "mathline": "T = C2    det = +1    (x, y) -> (-x, -y)",
+        "quote": '"This inverts the standard."',
+        "standard_ref": "RFC 2119 MUST NOT / SHALL NOT",
+        "contact_caption": "Critical — Layer Proof Palette",
+        "pdf_subject": "Owl Semaphore — Critical state specification (OWL 3 / C2, v3.0.0)",
+    },
+    {
+        "md": "OWL-4-METACOGNITIVE.md",
+        "pdf": "OWL-4-METACOGNITIVE.pdf",
+        "badge": "assets/releases/540/META-composite-transparent-540.png",
+        "contact_sheet": "assets/proofs/META-layer-proof-palette.png",
+        "color": "#8C4191",
+        "color_rgb": "rgb(140, 65, 145)",
+        "label": "M E T A C O G N I T I V E",
+        "state_token": "METACOGNITIVE",
+        "title": "Owl Semaphore — Metacognitive",
+        "subtitle_typst": "OWL 4 / Frame-Audit State (sigma_h) / Standard Specification",
+        "mathline": "T = sigma_h    det = -1    (x, y) -> (x, -y)",
+        "quote": '"The observer audits the frame."',
+        "standard_ref": "Epistemic / Framework (META)",
+        "contact_caption": "Metacognitive — Layer Proof Palette",
+        "pdf_subject": "Owl Semaphore — Metacognitive state specification (OWL 4 / sigma_h, v3.0.0)",
+    },
+]

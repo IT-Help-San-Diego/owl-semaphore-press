@@ -20,6 +20,20 @@ The document spec is a plain dict (the same schema generate_pdfs.py uses):
     contact_caption, pdf_subject
     contact_width      optional, defaults to "85%"
 
+MIGRATION NOTE (contact_width): the legacy generator hard-coded a 90%
+contact-sheet width for OWL-SEMAPHORE-SYSTEM.md and 85% for everything else.
+Here that rule is the spec key ``contact_width`` — a legacy DOCS dict passed
+unchanged would silently render the SYSTEM sheet at 85%. Use the canonical
+specs in ``owl_documents.OWL_SEMAPHORE_DOCS`` (which carry the key) instead
+of hand-copying the legacy dicts.
+
+Escaping: fields interpolated into Typst STRING context (paths, tokens,
+titles, quotes) are escaped with ``typst_str``. Fields interpolated into
+Typst MARKUP context (subtitle_typst, author, author_line, brand, repo_url,
+ledger_title, copyright_line, contact_width, color_rgb) are intentionally
+raw — they may carry Typst markup — so they must come from trusted config,
+not arbitrary user input.
+
 All release-level identity (version, author, DOI family, branding) comes from
 ``PressConfig`` — see config.py.
 """
@@ -39,20 +53,39 @@ def banner_tuple_line(cfg: PressConfig, state_token: str, mathline: str, quote: 
 
     Format is stable and load-bearing: integrity tests (e.g. owl-semaphore's
     tests/test_banner_tuple.py) extract page-one text and match this exact
-    string. Do not reorder or reformat fields.
+    string. Do not reorder or reformat fields. DOI fields whose config value
+    is empty (e.g. a first release with no previous version) are omitted
+    rather than rendered with an empty right-hand side.
     """
-    return (
-        f"BANNER-TUPLE :: STATE={state_token} :: TRANSFORM={mathline} :: "
-        f"QUOTE={quote} :: VERSION={cfg.release_label} :: VERSION-DOI={cfg.version_doi} :: "
-        f"CONCEPT-DOI={cfg.concept_doi} :: PREVIOUS-VERSION-DOI={cfg.previous_version[1]}"
-    )
+    parts = [
+        f"STATE={state_token}",
+        f"TRANSFORM={mathline}",
+        f"QUOTE={quote}",
+        f"VERSION={cfg.release_label}",
+    ]
+    if cfg.version_doi:
+        parts.append(f"VERSION-DOI={cfg.version_doi}")
+    if cfg.concept_doi:
+        parts.append(f"CONCEPT-DOI={cfg.concept_doi}")
+    if cfg.previous_version[1]:
+        parts.append(f"PREVIOUS-VERSION-DOI={cfg.previous_version[1]}")
+    return "BANNER-TUPLE :: " + " :: ".join(parts)
 
 
 def _keywords_block(cfg: PressConfig, state_token: str) -> str:
-    """Render the two-line keywords tuple exactly as the legacy template did."""
-    line1 = ", ".join(f'"{k}"' for k in cfg.keywords_prefix) + ","
-    line2 = f'"{state_token}", ' + ", ".join(f'"{k}"' for k in cfg.keywords_suffix)
-    return f"{line1}\n             {line2}"
+    """Render the document keywords tuple.
+
+    With a non-empty ``keywords_prefix`` this reproduces the legacy two-line
+    byte layout exactly; otherwise it falls back to a single-line tuple.
+    Every keyword is escaped for Typst string context.
+    """
+    kws = [typst_str(k) for k in cfg.doc_keywords(state_token)]
+    n = len(cfg.keywords_prefix)
+    if n and len(kws) > n:
+        line1 = ", ".join(f'"{k}"' for k in kws[:n]) + ","
+        line2 = ", ".join(f'"{k}"' for k in kws[n:])
+        return f"{line1}\n             {line2}"
+    return ", ".join(f'"{k}"' for k in kws)
 
 
 def _prior_doi_line(cfg: PressConfig) -> str:
@@ -61,14 +94,53 @@ def _prior_doi_line(cfg: PressConfig) -> str:
     )
 
 
+#: Typst hard line break + continuation indent used inside text blocks.
+_BREAK = " \\\n    "
+
+
+def _title_doi_block(cfg: PressConfig) -> str:
+    """The title-page provenance block; empty DOI-family fields drop their
+    segment (and their line) instead of rendering dangling markers."""
+    line1 = f"ORCID {cfg.orcid}"
+    if cfg.version_doi:
+        line1 += f" #h(12pt) VERSION-DOI {cfg.version_doi} ({cfg.release_label})"
+    lines = [line1]
+    line2_parts = []
+    if cfg.concept_doi:
+        line2_parts.append(f"CONCEPT-DOI {cfg.concept_doi}")
+    if cfg.previous_version[1]:
+        line2_parts.append(
+            f"PREVIOUS-VERSION-DOI {cfg.previous_version[1]} ({cfg.previous_version[0]})"
+        )
+    if line2_parts:
+        lines.append(" #h(12pt) ".join(line2_parts))
+    if cfg.prior_versions:
+        lines.append(_prior_doi_line(cfg))
+    lines.append(
+        f"SOURCE {cfg.repo_url} #h(12pt) VERSION {cfg.release_label} · LICENSE {cfg.license}"
+    )
+    return _BREAK.join(lines)
+
+
 def _ledger_doi_line(cfg: PressConfig) -> str:
-    parts = [
-        f"{cfg.release_label} citing DOI {cfg.version_doi}",
-        f"Concept DOI {cfg.concept_doi}",
-        f"{cfg.previous_version[0]} DOI {cfg.previous_version[1]}",
-    ]
+    parts = []
+    if cfg.version_doi:
+        parts.append(f"{cfg.release_label} citing DOI {cfg.version_doi}")
+    if cfg.concept_doi:
+        parts.append(f"Concept DOI {cfg.concept_doi}")
+    if cfg.previous_version[1]:
+        parts.append(f"{cfg.previous_version[0]} DOI {cfg.previous_version[1]}")
     parts += [f"{label} DOI {doi}" for label, doi in cfg.prior_versions]
     return " · ".join(parts)
+
+
+def _ledger_footer_block(cfg: PressConfig) -> str:
+    lines = [f"{cfg.brand} {cfg.release_label} · {cfg.repo_url}"]
+    doi_line = _ledger_doi_line(cfg)
+    if doi_line:
+        lines.append(doi_line)
+    lines.append(f"{cfg.copyright_line} · Licensed under {cfg.license}")
+    return _BREAK.join(lines)
 
 
 def build_typst_document(doc: dict, body_typst: str, cfg: PressConfig) -> str:
@@ -92,6 +164,9 @@ def build_typst_document(doc: dict, body_typst: str, cfg: PressConfig) -> str:
     # so the banner-tuple test can verify it.
     banner_tuple = banner_tuple_line(cfg, state_token, mathline, quote)
 
+    footer_right = (f"DOI {cfg.version_doi} · {cfg.license}"
+                    if cfg.version_doi else cfg.license)
+
     return f'''// {cfg.brand} PDF — generated by {cfg.generated_by} ({cfg.release_label})
 #set document(
   title: "{typst_str(title)} ({cfg.release_label})",
@@ -100,7 +175,7 @@ def build_typst_document(doc: dict, body_typst: str, cfg: PressConfig) -> str:
 )
 
 #let header-color = {color}
-#let owl-badge = "{badge_path}"
+#let owl-badge = "{typst_str(badge_path)}"
 #let state-token = "{typst_str(state_token)}"
 
 #set page(
@@ -125,7 +200,7 @@ def build_typst_document(doc: dict, body_typst: str, cfg: PressConfig) -> str:
       align: (left, center, right),
       [{cfg.brand} · {cfg.release_label}],
       [#counter(page).display("1 of 1", both: true)],
-      [DOI {cfg.version_doi} · {cfg.license}],
+      [{footer_right}],
     )
   }},
 )
@@ -182,7 +257,7 @@ def build_typst_document(doc: dict, body_typst: str, cfg: PressConfig) -> str:
 
 #align(center)[
   #v(12pt)
-  #image("{badge_path}", width: 140pt)
+  #image("{typst_str(badge_path)}", width: 140pt)
   #v(8pt)
 
   #text(size: 10pt, weight: "bold", fill: header-color, tracking: 3pt)[{label_long}]
@@ -206,10 +281,7 @@ def build_typst_document(doc: dict, body_typst: str, cfg: PressConfig) -> str:
 
   #v(6pt)
   #text(size: 8.5pt, fill: luma(120))[
-    ORCID {cfg.orcid} #h(12pt) VERSION-DOI {cfg.version_doi} ({cfg.release_label}) \\
-    CONCEPT-DOI {cfg.concept_doi} #h(12pt) PREVIOUS-VERSION-DOI {cfg.previous_version[1]} ({cfg.previous_version[0]}) \\
-    {_prior_doi_line(cfg)} \\
-    SOURCE {cfg.repo_url} #h(12pt) VERSION {cfg.release_label} · LICENSE {cfg.license}
+    {_title_doi_block(cfg)}
   ]
   #v(8pt)
 
@@ -232,7 +304,7 @@ def build_typst_document(doc: dict, body_typst: str, cfg: PressConfig) -> str:
     {typst_str(contact_caption.upper())}
   ]
   #v(8pt)
-  #image("{contact_path}", width: {contact_width})
+  #image("{typst_str(contact_path)}", width: {contact_width})
 ]
 #v(12pt)
 
@@ -262,10 +334,10 @@ def build_typst_document(doc: dict, body_typst: str, cfg: PressConfig) -> str:
   #grid(
     columns: (1fr, 1fr, 1fr, 1fr),
     gutter: 12pt,
-    align(center, image("{norm_badge}", width: 80pt)),
-    align(center, image("{nonnorm_badge}", width: 80pt)),
-    align(center, image("{crit_badge}", width: 80pt)),
-    align(center, image("{meta_badge}", width: 80pt)),
+    align(center, image("{typst_str(norm_badge)}", width: 80pt)),
+    align(center, image("{typst_str(nonnorm_badge)}", width: 80pt)),
+    align(center, image("{typst_str(crit_badge)}", width: 80pt)),
+    align(center, image("{typst_str(meta_badge)}", width: 80pt)),
     align(center, text(size: 8pt, weight: "bold", tracking: 1.5pt)[NORMATIVE]),
     align(center, text(size: 8pt, weight: "bold", tracking: 1.5pt)[NON-NORMATIVE]),
     align(center, text(size: 8pt, weight: "bold", tracking: 1.5pt)[CRITICAL]),
@@ -297,9 +369,7 @@ def build_typst_document(doc: dict, body_typst: str, cfg: PressConfig) -> str:
   #line(length: 60%, stroke: 0.5pt + luma(200))
   #v(8pt)
   #text(size: 8pt, fill: luma(140))[
-    {cfg.brand} {cfg.release_label} · {cfg.repo_url} \\
-    {_ledger_doi_line(cfg)} \\
-    {cfg.copyright_line} · Licensed under {cfg.license}
+    {_ledger_footer_block(cfg)}
   ]
 ]
 

@@ -93,6 +93,28 @@ class ClientTest(unittest.TestCase):
         _, _, _, body = self.t.calls[0]
         self.assertEqual(json.loads(body), {"metadata": {"title": "X"}})
 
+    def test_upload_percent_encodes_filename(self):
+        # Spaces/'#' must be encoded or urllib crashes / silently truncates the key.
+        self.t.route("PUT", "/api/files/bkt/a%20b%23c.pdf", 201, {"key": "a b#c.pdf"})
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "a b#c.pdf")
+            with open(path, "wb") as f:
+                f.write(b"x")
+            self.client.upload_file(DRAFT, path)
+        _, url, _, _ = self.t.calls[0]
+        self.assertTrue(url.endswith("/api/files/bkt/a%20b%23c.pdf"), url)
+
+    def test_delete_and_clear_files(self):
+        self.t.route("GET", "/api/deposit/depositions/999/files", 200,
+                     [{"id": "f1", "filename": "old-v1.zip"},
+                      {"id": "f2", "filename": "old-v1.pdf"}])
+        self.t.route("DELETE", "/api/deposit/depositions/999/files/f1", 204, b"")
+        self.t.route("DELETE", "/api/deposit/depositions/999/files/f2", 204, b"")
+        deleted = self.client.clear_files(999)
+        self.assertEqual(deleted, ["old-v1.zip", "old-v1.pdf"])
+        deletes = [(m, u) for m, u, _, _ in self.t.calls if m == "DELETE"]
+        self.assertEqual(len(deletes), 2)
+
 
 class CliGuardTest(unittest.TestCase):
     def test_publish_refuses_without_yes(self):

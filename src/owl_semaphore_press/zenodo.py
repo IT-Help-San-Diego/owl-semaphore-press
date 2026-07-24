@@ -15,6 +15,13 @@ Pure standard library (urllib). Auth via a personal access token with the
 Publishing is IRREVERSIBLE (a published DOI cannot be deleted). The client
 never publishes implicitly; ``ZenodoClient.publish`` must be called
 explicitly, and the CLI additionally requires ``--yes``.
+
+IMPORTANT — inherited files: a Zenodo new-version draft starts as a snapshot
+of the previous version, INCLUDING its files. Uploading only overwrites
+same-named keys; version-tagged filenames (e.g. ``owl-semaphore-v3.0.0.zip``)
+from the previous release are silently carried into the new record unless
+deleted first. Use :meth:`ZenodoClient.clear_files` (or ``owl-press zenodo
+upload --fresh``) before uploading the new release set.
 """
 
 from __future__ import annotations
@@ -25,9 +32,13 @@ import os
 import urllib.error
 import urllib.request
 from typing import Any, Callable
+from urllib.parse import quote
 
 PROD_BASE = "https://zenodo.org"
 SANDBOX_BASE = "https://sandbox.zenodo.org"
+
+#: Network timeout (seconds) for the default urllib transport.
+DEFAULT_TIMEOUT = 120
 
 # transport(method, url, headers, body) -> (status, response_bytes)
 Transport = Callable[[str, str, dict[str, str], bytes | None], tuple[int, bytes]]
@@ -44,7 +55,7 @@ def _urllib_transport(method: str, url: str, headers: dict[str, str],
                       body: bytes | None) -> tuple[int, bytes]:
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
             return resp.status, resp.read()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()
@@ -149,6 +160,21 @@ class ZenodoClient:
     def list_files(self, deposition_id: int | str) -> list[dict]:
         return self._request("GET", f"/api/deposit/depositions/{deposition_id}/files")
 
+    def delete_file(self, deposition_id: int | str, file_id: str) -> None:
+        """Delete one draft file (new-version drafts inherit the previous
+        version's files; stale ones must be deleted before publish)."""
+        self._request(
+            "DELETE", f"/api/deposit/depositions/{deposition_id}/files/{file_id}"
+        )
+
+    def clear_files(self, deposition_id: int | str) -> list[str]:
+        """Delete every file currently on the draft. Returns deleted filenames."""
+        deleted = []
+        for f in self.list_files(deposition_id):
+            self.delete_file(deposition_id, f["id"])
+            deleted.append(f.get("filename", f.get("key", f["id"])))
+        return deleted
+
     def upload_file(self, deposition: dict, path: str,
                     name: str | None = None) -> dict:
         """Upload one file into the deposition's bucket (new-style files API)."""
@@ -159,7 +185,9 @@ class ZenodoClient:
         ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         with open(path, "rb") as f:
             data = f.read()
-        return self._request("PUT", f"{bucket}/{filename}",
+        # The bucket key is a URL path segment: percent-encode it, otherwise
+        # spaces/non-ASCII crash urllib and '#'/'?' silently truncate the key.
+        return self._request("PUT", f"{bucket}/{quote(filename, safe='')}",
                              raw_body=data, content_type=ctype)
 
     # -- publish (IRREVERSIBLE) ---------------------------------------------

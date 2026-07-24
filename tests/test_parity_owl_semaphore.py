@@ -103,6 +103,32 @@ class ParityTest(unittest.TestCase):
             build_typst_document(spec, body, self.cfg),
         )
 
+    def test_shipped_specs_match_legacy_docs(self):
+        """owl_documents.OWL_SEMAPHORE_DOCS must equal legacy DOCS, plus the
+        contact_width key that replaces the legacy filename special-case."""
+        from owl_semaphore_press.owl_documents import OWL_SEMAPHORE_DOCS
+
+        self.assertEqual(len(OWL_SEMAPHORE_DOCS), len(self.legacy.DOCS))
+        for shipped, legacy in zip(OWL_SEMAPHORE_DOCS, self.legacy.DOCS):
+            with self.subTest(md=legacy["md"]):
+                extras = dict(shipped)
+                width = extras.pop("contact_width", "85%")
+                self.assertEqual(extras, legacy)
+                expected_width = ("90%" if legacy["md"] == "OWL-SEMAPHORE-SYSTEM.md"
+                                  else "85%")
+                self.assertEqual(width, expected_width)
+
+    def test_shipped_specs_render_byte_identical(self):
+        from owl_semaphore_press.owl_documents import OWL_SEMAPHORE_DOCS
+
+        body = "BODY-PLACEHOLDER\n"
+        for shipped, legacy in zip(OWL_SEMAPHORE_DOCS, self.legacy.DOCS):
+            with self.subTest(md=legacy["md"]):
+                self.assertEqual(
+                    self.legacy.build_typst_document(legacy, body),
+                    build_typst_document(shipped, body, self.cfg),
+                )
+
     def test_preprocess_parity_all_sources(self):
         for doc in self.legacy.DOCS:
             md_path = os.path.join(self.repo, doc["md"])

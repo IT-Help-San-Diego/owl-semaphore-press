@@ -98,6 +98,54 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("DOI 10.5281/zenodo.111 · CC-BY-4.0", out)
 
 
+class FirstReleaseConfigTest(unittest.TestCase):
+    """A first release has no previous/prior versions — no dangling markers."""
+
+    def _first_cfg(self, **overrides):
+        return _cfg(previous_version=("", ""), prior_versions=(), **overrides)
+
+    def test_no_dangling_previous_version_markers(self):
+        out = build_typst_document(_doc(), "B", self._first_cfg())
+        self.assertNotIn("PREVIOUS-VERSION-DOI", out)
+        self.assertNotIn(" ()", out)
+
+    def test_no_bare_linebreak_line_for_empty_priors(self):
+        out = build_typst_document(_doc(), "B", self._first_cfg())
+        for line in out.splitlines():
+            self.assertNotEqual(line.strip(), "\\",
+                                "empty prior_versions left a bare line break")
+
+    def test_banner_tuple_omits_empty_doi_fields(self):
+        cfg = self._first_cfg(concept_doi="")
+        line = banner_tuple_line(cfg, "CRITICAL", "T", '"q"')
+        self.assertNotIn("CONCEPT-DOI", line)
+        self.assertNotIn("PREVIOUS-VERSION-DOI", line)
+        self.assertTrue(line.endswith("VERSION-DOI=10.5281/zenodo.111"))
+
+    def test_footer_without_version_doi(self):
+        out = build_typst_document(_doc(), "B", self._first_cfg(version_doi=""))
+        self.assertNotIn("[DOI  ·", out)
+        self.assertIn("[CC-BY-4.0]", out)
+
+
+class KeywordsBlockTest(unittest.TestCase):
+    def test_keywords_are_escaped(self):
+        cfg = _cfg(keywords_prefix=('He said "hi"', "b", "c", "d"))
+        out = build_typst_document(_doc(), "B", cfg)
+        self.assertIn('"He said \\"hi\\""', out)
+
+    def test_empty_prefix_renders_single_valid_line(self):
+        cfg = _cfg(keywords_prefix=())
+        out = build_typst_document(_doc(), "B", cfg)
+        self.assertNotIn("keywords: (,", out)
+        self.assertIn('keywords: ("CRITICAL", "DNS Tool", "accessibility", '
+                      '"metacognition"),', out)
+
+    def test_paths_are_escaped_in_string_context(self):
+        out = build_typst_document(_doc(badge='we"ird.png'), "B", _cfg())
+        self.assertIn('#image("we\\"ird.png", width: 140pt)', out)
+
+
 class StatesTest(unittest.TestCase):
     def test_canonical_tuples_unchanged(self):
         # The four canonical state-operator tuples are normative; a change

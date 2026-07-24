@@ -5,9 +5,7 @@ from __future__ import annotations
 import re
 import subprocess
 
-
-class PandocError(RuntimeError):
-    pass
+from .errors import PandocError
 
 
 #: Title-block prefixes stripped by default (the owl-semaphore documents
@@ -21,7 +19,7 @@ DEFAULT_TITLE_PREFIXES: tuple[str, ...] = (
 
 
 def preprocess_md(md_path: str, title_prefixes: tuple[str, ...] = DEFAULT_TITLE_PREFIXES) -> str:
-    with open(md_path, "r") as f:
+    with open(md_path, "r", encoding="utf-8") as f:
         text = f.read()
 
     lines = text.splitlines()
@@ -48,12 +46,15 @@ def preprocess_md(md_path: str, title_prefixes: tuple[str, ...] = DEFAULT_TITLE_
 
 
 def md_to_typst(md_text: str) -> str:
-    result = subprocess.run(
-        ["pandoc", "-f", "markdown", "-t", "typst", "--wrap=none"],
-        input=md_text,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["pandoc", "-f", "markdown", "-t", "typst", "--wrap=none"],
+            input=md_text,
+            capture_output=True,
+            encoding="utf-8",
+        )
+    except FileNotFoundError as exc:
+        raise PandocError("pandoc not found on PATH — install pandoc") from exc
     if result.returncode != 0:
         raise PandocError(f"pandoc error: {result.stderr}")
     body = result.stdout

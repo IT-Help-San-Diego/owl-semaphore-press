@@ -6,12 +6,9 @@ import os
 
 from .config import PressConfig
 from .document import build_typst_document
+from .errors import RenderError
 from .markdown import md_to_typst, preprocess_md
 from .metadata import set_pdf_metadata
-
-
-class RenderError(RuntimeError):
-    pass
 
 
 def render_typst_source(doc: dict, repo_root: str, cfg: PressConfig) -> str:
@@ -40,7 +37,7 @@ def render_pdf(doc: dict, repo_root: str, cfg: PressConfig, keep_typ: bool = Fal
 
     pdf_path = os.path.join(repo_root, doc["pdf"])
     typ_path = os.path.join(repo_root, doc["pdf"].replace(".pdf", ".typ"))
-    with open(typ_path, "w") as f:
+    with open(typ_path, "w", encoding="utf-8") as f:
         f.write(typst_source)
 
     try:
