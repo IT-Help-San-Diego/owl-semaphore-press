@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "owl-semaphore-press"
+version = "0.1.0"
+description = "Owl Semaphore publication toolchain: the codified design language (banner tuple, state colors, title page, classification ledger) plus Zenodo release automation."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Carey James Balboa" }]
+keywords = ["owl-semaphore", "typst", "zenodo", "reproducible-research", "epistemic-notation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Markup",
+]
+# Core is pure stdlib. Rendering needs typst (+ pandoc on PATH); PDF
+# metadata stamping needs pikepdf.
+dependencies = []
+
+[project.optional-dependencies]
+render = ["typst>=0.11", "pikepdf>=8"]
+
+[project.scripts]
+owl-press = "owl_semaphore_press.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/IT-Help-San-Diego/owl-semaphore-press"
+"Design language source" = "https://github.com/IT-Help-San-Diego/owl-semaphore"
+
+[tool.setuptools.packages.find]
+where = ["src"]
