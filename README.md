@@ -34,7 +34,7 @@ first-line comment of the generated Typst source (retain it with
 `render_pdf(..., keep_typ=True)`), and the PDF's `/Creator` +
 `xmp:CreatorTool` metadata (requires `pikepdf`, part of the `[render]`
 extra). **Consumers must pin the package version** (e.g.
-`owl-semaphore-press==0.1.0`); a styling change must never silently restyle
+`owl-semaphore-press==0.1.1`); a styling change must never silently restyle
 an already-released artifact.
 
 ## Install

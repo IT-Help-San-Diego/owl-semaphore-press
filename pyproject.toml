@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "owl-semaphore-press"
-version = "0.1.0"
+version = "0.1.1"
 description = "Owl Semaphore publication toolchain: the codified design language (banner tuple, state colors, title page, classification ledger) plus Zenodo release automation."
 readme = "README.md"
 requires-python = ">=3.10"

@@ -6,8 +6,12 @@ concept record BEFORE release, embedded into source/PDFs/metadata, and the
 same draft — never GitHub auto-ingest — is published after the GitHub
 release, so exactly one Zenodo record exists per release.
 
-Pure standard library (urllib). Auth via a personal access token with the
-``deposit:write`` + ``deposit:actions`` scopes:
+Pure standard library (urllib). Uploads stream from disk (http.client sends
+file bodies in small blocks) and retry with bounded exponential backoff on
+connection-level failures — the v3.0.1 owl-semaphore release lost a 77 MB
+single-shot PUT to a BrokenPipeError that a plain retry would have survived.
+Auth via a personal access token with the ``deposit:write`` +
+``deposit:actions`` scopes:
 
     export ZENODO_TOKEN=...            # zenodo.org
     export ZENODO_SANDBOX_TOKEN=...    # sandbox.zenodo.org (use --sandbox)
@@ -26,12 +30,15 @@ upload --fresh``) before uploading the new release set.
 
 from __future__ import annotations
 
+import http.client
 import json
 import mimetypes
 import os
+import sys
+import time
 import urllib.error
 import urllib.request
-from typing import Any, Callable
+from typing import Any, BinaryIO, Callable
 from urllib.parse import quote
 
 PROD_BASE = "https://zenodo.org"
@@ -40,8 +47,20 @@ SANDBOX_BASE = "https://sandbox.zenodo.org"
 #: Network timeout (seconds) for the default urllib transport.
 DEFAULT_TIMEOUT = 120
 
-# transport(method, url, headers, body) -> (status, response_bytes)
-Transport = Callable[[str, str, dict[str, str], bytes | None], tuple[int, bytes]]
+#: Upload retry policy: 1 initial attempt + UPLOAD_RETRIES retries, sleeping
+#: UPLOAD_BACKOFF * 2**n seconds before retry n. Only connection-level
+#: failures (broken pipe, reset, timeout) are retried — the bucket PUT is
+#: idempotent and each attempt re-sends the file from the start, so a
+#: mid-stream failure cannot leave a corrupt upload. HTTP error responses
+#: are never retried.
+UPLOAD_RETRIES = 3
+UPLOAD_BACKOFF = 2.0
+
+# transport(method, url, headers, body) -> (status, response_bytes).
+# body may be bytes or an open binary file (uploads stream from disk).
+Transport = Callable[
+    [str, str, dict[str, str], "bytes | BinaryIO | None"], tuple[int, bytes]
+]
 
 
 class ZenodoError(RuntimeError):
@@ -52,7 +71,10 @@ class ZenodoError(RuntimeError):
 
 
 def _urllib_transport(method: str, url: str, headers: dict[str, str],
-                      body: bytes | None) -> tuple[int, bytes]:
+                      body: bytes | BinaryIO | None) -> tuple[int, bytes]:
+    # A file-like body is streamed by http.client in small blocks; the caller
+    # must supply Content-Length, else urllib falls back to chunked
+    # Transfer-Encoding, which the Zenodo files API does not accept.
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
@@ -63,28 +85,33 @@ def _urllib_transport(method: str, url: str, headers: dict[str, str],
 
 class ZenodoClient:
     def __init__(self, token: str, base_url: str = PROD_BASE,
-                 transport: Transport | None = None):
+                 transport: Transport | None = None,
+                 sleep: Callable[[float], None] | None = None):
         if not token:
             raise ZenodoError("no Zenodo token provided (set ZENODO_TOKEN)")
         self.token = token
         self.base_url = base_url.rstrip("/")
         self._transport = transport or _urllib_transport
+        self._sleep = time.sleep if sleep is None else sleep
 
     # -- low-level ---------------------------------------------------------
 
     def _request(self, method: str, path_or_url: str, json_body: Any = None,
-                 raw_body: bytes | None = None,
-                 content_type: str | None = None) -> Any:
+                 raw_body: bytes | BinaryIO | None = None,
+                 content_type: str | None = None,
+                 content_length: int | None = None) -> Any:
         url = (path_or_url if path_or_url.startswith("http")
                else f"{self.base_url}{path_or_url}")
         headers = {"Authorization": f"Bearer {self.token}"}
-        body: bytes | None = None
+        body: bytes | BinaryIO | None = None
         if json_body is not None:
             body = json.dumps(json_body).encode("utf-8")
             headers["Content-Type"] = "application/json"
         elif raw_body is not None:
             body = raw_body
             headers["Content-Type"] = content_type or "application/octet-stream"
+            if content_length is not None:
+                headers["Content-Length"] = str(content_length)
 
         status, payload = self._transport(method, url, headers, body)
         parsed: Any = None
@@ -177,18 +204,41 @@ class ZenodoClient:
 
     def upload_file(self, deposition: dict, path: str,
                     name: str | None = None) -> dict:
-        """Upload one file into the deposition's bucket (new-style files API)."""
+        """Upload one file into the deposition's bucket (new-style files API).
+
+        The file is streamed from disk, never loaded into memory whole. On a
+        connection-level failure (broken pipe, reset, timeout) the PUT is
+        retried up to UPLOAD_RETRIES times with exponential backoff, re-opened
+        from the start each attempt; HTTP error responses raise immediately.
+        """
         bucket = (deposition.get("links") or {}).get("bucket")
         if not bucket:
             raise ZenodoError("deposition has no links.bucket", payload=deposition)
         filename = name or os.path.basename(path)
         ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-        with open(path, "rb") as f:
-            data = f.read()
         # The bucket key is a URL path segment: percent-encode it, otherwise
         # spaces/non-ASCII crash urllib and '#'/'?' silently truncate the key.
-        return self._request("PUT", f"{bucket}/{quote(filename, safe='')}",
-                             raw_body=data, content_type=ctype)
+        url = f"{bucket}/{quote(filename, safe='')}"
+        size = os.path.getsize(path)
+        last_exc: Exception | None = None
+        for attempt in range(1 + UPLOAD_RETRIES):
+            if attempt:
+                delay = UPLOAD_BACKOFF * 2 ** (attempt - 1)
+                print(f"warning: upload of {filename} interrupted ({last_exc}); "
+                      f"retry {attempt}/{UPLOAD_RETRIES} in {delay:g}s",
+                      file=sys.stderr)
+                self._sleep(delay)
+            with open(path, "rb") as f:
+                try:
+                    return self._request("PUT", url, raw_body=f,
+                                         content_type=ctype,
+                                         content_length=size)
+                except (OSError, http.client.HTTPException) as exc:
+                    last_exc = exc
+        raise ZenodoError(
+            f"upload of {filename} failed after {1 + UPLOAD_RETRIES} attempts: "
+            f"{last_exc!r}"
+        ) from last_exc
 
     # -- publish (IRREVERSIBLE) ---------------------------------------------
 
